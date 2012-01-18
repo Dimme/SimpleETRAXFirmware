@@ -1,0 +1,8 @@
+total 64
+drwxr-xr-x   2 inin     i2groups     1024 Jan 16  2001 .
+drwxr-xr-x   9 inin     i2groups     1024 Jan 16  2001 ..
+-rwxr-xr-x   1 inin     i2groups    14967 Jan 16  2001 boot.s
+-rwxr-xr-x   1 inin     i2groups    28573 Jan 16  2001 compiler.h
+-rwxr-xr-x   1 inin     i2groups    10591 Jan 16  2001 etrax.h
+-rwxr-xr-x   1 inin     i2groups      271 Jan 16  2001 files
+-rwxr-xr-x   1 inin     i2groups     4527 Jan 16  2001 start.c

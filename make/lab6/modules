@@ -1,0 +1,25 @@
+#!*****************************************************************************
+#!
+#!  FILE NAME   : modules (ina)
+#!
+#!  DESCRIPTION : Defines paths to modules.
+#!
+#! 
+#!*****************************************************************************
+
+[LINK]
+# Linker memory definition for ETRAX/CRIS CPU
+-Tdata 0x60000000
+
+[PRODUCT]
+# Product                 Hardware     Compiler definitions
+# -------                 --------     --------------------
+
+  lab6                    ETRAX        -DPROD_INA
+
+[MODULES]
+# Subsystem                      Files   
+# ------                         -----   
+
+lab6                             files
+

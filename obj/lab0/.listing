@@ -1,0 +1,5 @@
+total 6
+drwxr-xr-x   2 inin     i2groups     1024 Jan 16  2001 .
+drwxr-xr-x   3 inin     i2groups     1024 Jan 16  2001 ..
+-rwxr-xr-x   1 inin     i2groups     2716 Jan 16  2001 src+lab0+boot-s.o
+-rwxr-xr-x   1 inin     i2groups      985 Jan 16  2001 src+lab0+start-c.o

@@ -1,0 +1,1302 @@
+#!/usr/local/bin/perl -w
+#! (Please keep the "-w" switch and fix your errors instead)
+#!
+#! FILE NAME  : fixtemplates
+#!
+#! PARAMETERS : fixtemplates [-round round] [-tiname tiname ]
+#!              [ -parts prefix ] <link-error-file> <makefile> <temp-inst-file>
+#!              The optional "round" argument (default 0) tells which
+#!              iteration of the template-instantiation we are called in.
+#!               The option "tiname" tells which real name the
+#!              temp-inst-file has in link-error-file.
+#!               The option "parts" makes the temp-inst-file argument
+#!              a makefile, not a source-file, instead creating/adding
+#!              definitions to files by the same name as the
+#!              object-files, removing "-cc.o", prepending with "prefix"
+#!              and suffixing with ".cc".  The object files will be
+#!              the same as the original object file names, prepending
+#!              with "prefix".  The makefile holds methods and
+#!              dependencies for generating the source-files and
+#!              object-files, and a shell-script extractable global
+#!              dependency for the source-files and object-files. 
+#!
+#! DESCRIPTION: Scripts to generate explicit templated class
+#!              instantiations for projects/products with C++-code.
+#!               Works in close interaction with the makefile, so you
+#!              may need to update mgmake if you do large
+#!              modifications here (or vice versa). 
+#!
+#!               First round:
+#!              * Create temp-inst-file if it does not exist.
+#!              * If it does, add template instantiations and
+#!                dependencies/include paths at end of file (with a
+#!                comment on where the error was found).  This will also
+#!                simplify splitting up the temp-inst-file later if we
+#!                find it useful.  The makefile must accept this
+#!                (i.e. multiple areas with dependencies and include-paths)
+#!              * The temp-inst-file is assumed removed (by makefile)
+#!                whenever a cc-file is modified from where #includes
+#!                etc. are taken.
+#!              * The link-errors are just sorted according to
+#!                templated-class and uniq:ed.  Whatever file is found
+#!                at the beginning of the line is used to get "#includes".
+#!              * Ignore the round argument.
+#!
+#!               Suggested improvements:
+#!              * Just modify the temp-inst-file if a dependency-file
+#!                is changed.  This may save time compared to creating
+#!                the temp-inst-file from scratch (at least computing
+#!                the inherited dependencies via the makefile takes
+#!                some time).  Will this win?
+#!              * Find a minimal set of dependency-files (from the
+#!                linker error messages) to cover dependencies for all
+#!                template instantiations. People who compile a lot may
+#!                like this, if the preprocessing takes a long time
+#!                compared to finding the minimal set (or we don't
+#!                recreate the temp-inst-file a lot).  Maybe count-in
+#!                if the dependency-files themselves have a lot of
+#!                dependencies (compared to what we already depend
+#!                on).
+#!                 I think this is an NP-complete problem:
+#!                (when you remove the trivial cases such as a
+#!                 template instantation need in one file only)
+#!                Associate a value with each possible .cc-file to
+#!                include, based on how many and which include-files
+#!                it includes.  This value depends on the other chosen
+#!                .cc-files (or really their include-files), and 
+#!                whether some of them have multiple instantiations,
+#!                and which include-files they have in common.
+#!                It surely looks like an exponential (non-polynomial)
+#!                relation to me. 
+#!              * Maybe try to save "templated-class / files"
+#!                relationships in temp-inst-file to use an alternate
+#!                dependency-file for a templated-class if a
+#!                dependency-file was modified (there is a definite
+#!                risk it may be modified again, so this will reduce
+#!                temp-inst-file-recompile-time/recreation-time right on).
+#!              * Obvious: use the "round" argument in some positive way.
+#!                Initial semantics: Assume round 0 is when someone
+#!                modified a dependency-file (so we need to update our
+#!                dependencies and #includes), != 0 when we are in the
+#!                linker-error-loop.
+#!
+#!
+#!                Second round:  The most important (annoyable) factor
+#!               is the compilation space/time of the temp_inst_file.
+#!               This cannot be reduced by other than small factors by
+#!               optimizing the file set etc. as described above,
+#!               since many changes happen to global header-files
+#!               (such as msg.h in one specific project).  The
+#!               first-round method is still the optimal one for
+#!               target production code size, so it should be kept.
+#!             
+#!                Another approach has to be taken for day-to-day
+#!               development.  We can split up the temp_inst_file into
+#!               one for each original-part-file, and each such file
+#!               should not take longer to compile than the
+#!               original-part-file.  The difference is that we now
+#!               have a set of object-dependencies and
+#!               source-dependencies instead of just one.  This can be
+#!               handled by making a temp-inst-makefile at the  
+#!               same time.  Another problem is that we now have to
+#!               make explicit instantiation in each part-file, or
+#!               they will GROW.  The final code will still be larger
+#!               than with one global temp_inst_file, since any partly
+#!               instantiated classes will now need to be completely
+#!               instantiated.  This tradeoff will hopefully be small
+#!               compared to the almost infinite (in small terms)
+#!               compilation time and compilation space (example:
+#!               26Mbyte) for the temp_inst_file.  Of course
+#!               modifications have to be made in mgmake as well.
+#!                For re-generation, we can use "-tiname tiname" to
+#!               indicate which REAL prefix the source and object
+#!               parts should have in the makefile.
+#!
+#! SUBROUTINES: translate_to_source_file(string)
+#!              translate_to_object_file(string) 
+#!              get_includes(filename)
+#!              get_dependencies_and_includepaths(filename,makefilename)
+#!              filter_templates(FILE,expand_templates)
+#!              expand_template(template)
+#!
+#!---------------------------------------------------------------------------
+#! HISTORY                                                    
+#!                                                            
+#! DATE         NAME            CHANGES                       
+#! ----         ----            -------                       
+#! Feb 28, 1996 H-P Nilsson     Created.
+#! Mar 04, 1996 H-P Nilsson     Modified.
+#! Mar 05, 1996 H-P Nilsson     (get_includes) Made it work when the
+#!                              first source-line starts with 'extern "C"'
+#!                              => only accept 'extern "C"' and 'extern "C" {'
+#!                              as "preprocessor-directives".
+#! Mar 05, 1996 H-P Nilsson     (get_includes) Added "#undef" and #"#error" as
+#!                              recognized preprocessor directives. 
+#! Mar 06, 1996 H-P Nilsson     Did not work properly when there were
+#!                              undefined template instantiations
+#!                              referenced from the temp_inst_object_file. 
+#! Mar 07, 1996 H-P Nilsson     Changed some "// foo" lines into
+#!                              "// REMARK: foo" to facilitate
+#!                              comparison without these lines.
+#!                               Added -tiname option.
+#! Mar 20, 1996 H-P Nilsson     Second round (see above) with "-parts".
+#! Apr 18 1996  H-P Nilsson     Now should work with templated
+#!                              functions as well
+#! Apr 23, 1996 H-P Nilsson     Now does work with templated
+#!                              functions as well
+#! Apr 24, 1996 H-P Nilsson     Came to think of cases where a '<'
+#!                              comes before a '(' in a function
+#!                              template (operator<<, operator<,
+#!                              operator<= etc).
+#! May 06, 1996 H-P Nilsson     Changed the "::member" removal code to
+#!                              take better care of the case where
+#!                              multiple "::" exist in the same
+#!                              "template error". 
+#! May 13, 1996 H-P Nilsson     Changed from the sun-make specific
+#!                              ":=" (conditional macro value) to the
+#!                              more generic use of individual macro names).
+#! May 31 1996  H-P Nilsson     Also do not sort the include paths anymore.
+#! Jun 25, 1996 H-P Nilsson     Modified recognized template-functions
+#!                              sanity check.
+#! Jul 18, 1996 H-P Nilsson     Can now handle unresolvable
+#!                              "parenthesized" template parameter
+#!                              types; makes "temporary" unique typedefs.
+#! Jul 30, 1996 H-P Nilsson     Accepts new linker "error" message syntax.
+#! Oct 30, 1996 H-P Nilsson     Makes "echodeps" output with space as
+#!                              delimiter, not newline.  Important when the
+#!                              output is used as a parameter to (g)make.
+#!
+#!---------------------------------------------------------------------------
+#!
+#! (C) Copyright 1991-96, Axis Communications AB, LUND, SWEDEN
+#!
+#!***************************************************************************
+# @(#) fixtemplates 1.15 10/31/96
+
+############ SUBROUTINES ######################################################
+
+#
+# Translate the path-mangled object file name back to the source file name.
+#
+# It may not be used until arguments are parsed and the
+# $temp_inst_object_file variable is initiated.
+#
+sub translate_to_source_file
+{
+  my($demangling_name) = @_;
+
+  # Special for temp_inst_object_file; just return temp_inst_file.
+  # No normal demangling since it is not one of the "normal" object files.
+  if (!$do_parts)
+  {
+    if ($demangling_name eq $temp_inst_object_file)
+    {
+      return $temp_inst_file;
+    }
+  }
+  elsif ($demangling_name =~ m!/$parts_prefix!)
+  {
+    ($demangling_name) = split("-cc.o",$demangling_name);
+    return $demangling_name . ".cc";
+  }
+
+  die ("Strange file-name-mangling, time to update $my_id or mgmake:\n\"$demangling_name\"\n")
+# Avoid LTS, use ! as pattern delimiter
+      unless ($demangling_name =~ m!^\.\./obj/[^/]+/([^.]+).o!);
+
+  $demangling_name = $1;
+  
+  $demangling_name =~ tr(+-)(/.);
+  return "../" . $demangling_name;
+}
+
+#
+# Translate a path to a source file into an object file name
+#
+sub translate_to_object_file
+{
+  my($prefix);
+  my($addprefix,$inname) = @_;
+
+  # Get location of object files (should be same for all
+  # "object"-files). 
+  $temp_inst_file =~ m!(../obj/[^/]+)!;
+  $prefix = $1;
+
+  # Remove leading non-alpha characters (i.e. ../) so we get the first
+  # part to be mangled.
+  $inname =~ /(\w[.]+$)/;
+  $inname = $1;
+                
+  # Now remove the .cc-part (there must be one)
+  ($inname) = split ('.cc',$inname); 
+  
+  # Mangle all '/' into '+'
+  $inname = join('+',split('/',$inname));
+
+  # Add prefix and suffix and return
+
+  return $prefix . $addprefix . $inname . "-cc.o";
+}
+
+#
+# Maybe print a header into a file, if it is empty or does not exist.
+sub do_header
+{
+  my($TIFILE);
+  my($name,$c,$extra);
+  
+  ($name, $c, $extra) = @_;
+
+#
+# Create the template-instantiation-file and add header, if it does
+# not exist (or empty) 
+#
+  if (!-e $name || -z $name)
+  {
+    open (TIFILE,">$name")
+        || die ("Cannot open template instantiation file \"$name\": $!\n");
+    print TIFILE "$c THIS FILE IS AUTOMATICALLY GENERATED FROM LINKER ERRORS,\n";
+    print TIFILE "$c THE PRODUCT MAKEFILE AND THE SOURCE FILES TO INSTANTIATE TEMPLATED\n";
+    print TIFILE "$c CLASSES IN C++.\n";
+    print TIFILE "$c DO NOT MODIFY THIS FILE OR PUT THIS FILE INTO ANY VERSION CONTROL SYSTEM\n";
+    print TIFILE "$c  VIOLATORS WILL BE PROSECUTED UNDER AXIS CORPORATE LAW\n";
+    
+    print TIFILE $extra;
+
+    print TIFILE "$c REMARK: $call_usage\n";
+    print TIFILE "$c REMARK: Added at round $round_argument\n";
+
+    close (TIFILE)
+        || die ("Cannot close template instantiation file \"$name\": $!\n");
+  }
+
+}
+
+#
+#
+# Get the initial #include:s (with extern "C"{} stuff) from a file
+# The #includes may be inside #ifdef stuff.
+#
+# Ignore all lines before the first preprocessor directive or extern "C"
+# (if there is no includes, then what is it doing here?
+#  Any line with first non-space character alphanumeric (not counting
+# extern "C") makes us return what we got.
+#  This makes the temp-inst-file vulnerable to #define DEBUG:s, but
+# such problems that should be disciplined by an Axis C++ standard rule.
+#
+# The return-value is a string that may be included in the temp-int-file
+#
+#
+sub get_includes
+{
+  my($FILE);
+  my($retval) = "";
+  my($filename) = @_;
+  my($found_pp) = 0;
+  my(%defines);
+  my($are_defined) = 0;
+  my($c_comment) = 0;
+  my($not_the_comment) = "";
+
+  undef %defines;
+  open(FILE,$filename) || die ("Cannot open $filename: $!\n");
+
+  while (<FILE>)
+  {
+    # Try to match C and C++ comments.  Weed them out right here.
+    # We do NOT support multiple comments on the same line.
+
+    # First, match a C++ comment at the beginning of a line, unless we
+    # are in a C comment
+    if (m!^\s*//! && !$c_comment)
+    {
+      next;
+    }
+
+    # Match the beginning of a C comment.  Save whatever is BEFORE the comment.
+    # ...unless in a C comment
+    if (m!^([^/]*)/\*! && !$c_comment)
+    {
+#      print "Starting C comment: $_";
+      $c_comment = 1;
+      $not_the_comment = $1;
+    }
+
+    # Match the end of a comment.  Modify "current line" to be what
+    # was outside the comment
+    # ??? (Do we really) Need the /g switch since we dont start at the beginning of
+    # the line (else we will probably NOT catch the end-comment if the
+    # comment ends at the same line.
+    if ($c_comment && m!\*/(.*)$!g)
+    {
+#      print "Ending C comment: $_";
+      $c_comment = 0;
+      $_ = $not_the_comment . " $1"; # Add space to avoid unwanted concatenation
+    }
+
+    # If we are still in a C comment (like when it spans several
+    # rows), bail out here.
+    if ($c_comment)
+    {
+#      print "Still in /**/: $_";
+      next;
+    }
+
+    # Weed out empty lines
+    if (/^\s*$/)
+    {
+      next;
+    }
+    
+    # Match some preprocessor directive or extern "C".  Not #pragma or
+    # extern "C" anything_else_than_right_curly_brace
+    if (/^\s*\#\s*(include|if|define|elif|else|endif|line|undef|error)/
+        || /^\s*extern\s*"C"\s*(\{)?\s*$/)
+    {
+#      print "Found: $_";
+      $found_pp = 1;
+
+      # Save all #define foo:s in a list (ignore nesting).  Only save
+      # one occurence, or people will laugh when they find multiple #undef:s
+      # with the same symbol.
+      if (/^\s*\#\s*define\s+([^(\s]+)/)
+      {
+        $defines{$1} = 0;
+        $are_defined = 1;
+      }
+    }
+
+    # Stop when we found an word character as the first non-space
+    # character in a file.  Count #pragma too for some reason.
+    # ... not before first preprocessor directive.
+    elsif ($found_pp && /^\s*\w/ || /^\s*\#\s*pragma/)
+    {
+      last;
+    }
+
+    #
+    # If we are here, and we found a preprocessor directive before,
+    # then save this line.
+    #  It means we will save ANY non-comment non-empty lines after
+    # finding the first preprocessor directive up to the first line
+    # containing an alphanumeric+_ as the first non-space character
+    #
+    if ($found_pp)
+    {
+      $retval .= $_;
+
+    }
+  }
+  close(FILE) || die ("Cannot close $filename: $!\n");
+
+  if ($are_defined)
+  {
+    $retval .= "#undef " . join("\n#undef ",(keys %defines)) . "\n";
+  }
+  return $retval;
+}
+
+#
+# Get the dependencies for an object-file, from the makefile
+# (takes too long to weed out with "$(CC) -MM", and then we
+# still have to get the flags via the makefile..  This will be merged
+# into the rest of the dependencies for the temp-inst-file.
+#
+# For a hack-value, it was too easy to ignore the possibility and
+# run-time win of adding the extraction of the include-path to this
+# function.  For the peace of your mind (read: "you pea-brain") you may
+# want to weed out that function and make an extra loop through the
+# makefile etc...
+#
+# The return-value is an array with filenames and the last entry is
+# the include-paths as a space-delimited string (or the empty string).
+#
+sub get_dependencies_and_includepaths
+{
+  my($the_objectfile, $the_makefile) = @_;
+  my($MAKEFILE);
+  my($found_it) = 0;
+  my(%dependencies);
+  my($the_mangled_objectfile);
+  my($includepaths) = "";
+  my(@retval);
+
+  undef %dependencies;
+
+#  print "The object-file is: $the_objectfile\n";
+#  print "The makefile is: $the_makefile\n";
+
+  #
+  # We need something like 'sed '^$the_objectfile: \\$','^$the_sourcefile$'
+  # except we dont want the first and last line, and we dont want to
+  # calculate the source-file-name (and we shouldnt need to), we just
+  # want up-to-not-including the last line without an ending backquote.
+  #
+  # If is assumed that mgmake creates dependencies that look like
+  # (quotes express beginning and end of line:)
+  #
+  # "path/foo-cc.o: \"
+  # "[ ]*(dependencies )*\"
+  # "source_path/foo.cc"
+  #
+  # where our $the_objectfile is "path/foo-cc.o" and we dont really
+  # care about the name or path of the source-file, as long as the its
+  # on the last line, and that line has no backquote.
+  #
+
+  open(MAKEFILE,$the_makefile)
+      || die ("Cannot open the makefile \"$the_makefile\": $!\n");
+
+  # Uh-oh, we have metacharacters in the search pattern ($the_objectfile)!
+  # They must be quoted.
+  $the_mangled_objectfile = quotemeta $the_objectfile;
+
+  while (<MAKEFILE>)
+  {
+#    print "Got here, reading $_";
+
+    chomp; # Or a newline will match \s
+
+    #
+    # First line (with the ":" and no dependeny-files)
+    #
+    if (/^$the_mangled_objectfile: \\$/)
+    {
+#      print "Found first line: $_";
+      $found_it = 1;
+      next;
+    }
+
+    #
+    # The last line (we dont want that dependency, it's the source
+    # file)
+    #
+    if ($found_it && ! /\\$/)
+    {
+#      print "Found last line: $_";
+      last;
+    }
+
+    #
+    # The lines in-between (with dependencies, there might be empty ones)
+    #
+    if ($found_it)
+    {
+      #
+      # Weed out all dependencies.
+      # Stop when there are no non-space characters before a space.
+      # (i.e. when there is only the space before the last '\'
+      #
+      while (s/\s*(\S+)\s/ /)
+      {
+#        print "Found: $1\n";
+        $dependencies{$1} = 0;
+      }
+#      print "Ignored: $_\n";
+
+    }
+  }
+
+  #
+  # Extra Extra! get the include-path two lines from the dependencies.
+  # We may get here if we did not find any dependencies, so watch out
+  # for that.
+  if (<MAKEFILE> && ($_ = <MAKEFILE>))
+  {
+    # This is the line we want
+    /((-I\S+\s+)+)/;
+    $includepaths = $1;
+  }
+
+  close (MAKEFILE)
+      || die ("Cannot close the makefile \"$the_makefile\"\n");
+
+  @retval = defined(keys %dependencies) ? (keys %dependencies) : ();
+
+  push @retval, $includepaths;
+  return @retval;
+}
+
+sub expand_template
+{
+  my ($template) = @_;
+  my (@retval) = ($template);
+  my (@tmplist) = ();
+  my (@tmplist2) = ();
+  my (@tmplist3) = ();
+
+  my($join_str) = "";
+  my($str);
+
+  # Strip out ANY from this templates Foo< ANY > while remembering
+  # that it is the _first_ and the _last_ braces we want to remove.
+#  print "B: .$template. A: .";
+
+  # We have to differ function templates from (class) type templates.
+  #  That is, if there's a parenthesis before the first '<', then strip
+  # differently; strip out STUFF in "Foo( STUFF )" and "Foo< STUFF >"
+  # respectively. 
+  #  It seems very hard to avoid the pattern-match memory.  Force the
+  # $1 result into a list to avoid it.
+  $template =~ /[(<]/g;
+  if ($& eq '(' || ($` =~ /operator[ ]*$/) )
+  {
+    ($template) = ($template =~ /^[^(]+\((.+)(?=\)$)/);
+  }                      
+  else
+  {
+    ($template) = ($template =~ /^[^<]+\<(.+)(?=\>$)/);
+  }
+#  print "$template.\n";
+
+
+  # We might as well return here unless any parameters are templates
+  # themselves. 
+  if (!defined($template))
+  {
+    print "foO!\n";
+  }
+  if  ($template !~ /\</)
+  {
+    return @retval;
+  }
+
+  # Now split out the template arguments to _this_ template, and if
+  # they have a "<" in them, run them recursively through this
+  # function.
+  #  There is a small problem; we have to _not_ match the arguments of
+  # the arguments; only the ones for _this_ level.
+  @tmplist = split ', ',$template;
+
+  foreach $str (@tmplist)
+  {
+    $str = $join_str . $str;
+
+    @tmplist2 = ($str =~ m/\</g);
+    @tmplist3 = ($str =~ m/\>/g);
+
+    if ($#tmplist2 != $#tmplist3)
+    {
+      $join_str = $str . ", ";
+    }
+    else
+    {
+      $join_str = "";
+      if ($#tmplist2 != -1)
+      {
+        # If the string ends in space (operator>> disambiguitance)
+        # then chop it off.
+        if ($str =~ / $/)
+        {
+          chop $str;
+        }
+
+        # Chop of stuff after the '>', it may be added as a modifier
+        # to a function template.
+        $str =~ s/\>[^>]+$/\>/;
+
+        if ($str =~ /\</)
+        {
+          push(@retval,expand_template($str));
+        }
+      }
+    }
+  }
+
+  # Join back spaces between '>>' for operator>> disambiguity.  Note
+  # that we have to add a character else split will just remove the
+  # last ">>".
+  map {my($tmp) =$_ . "A"; while ($tmp =~/\>\>/) { $tmp = join ('> >',split('\>\>'));}; chop $tmp; $tmp;} @tmplist;
+
+  return @retval;
+}
+
+#
+# filter_templates: read the file, make a good approximation of a
+# minimal set of files where we take the templates from.  Output a
+# vector with linker errors as output from the linker.
+#  Or, die with "unknown symbol: `$$' (NOT a template) in file `$$'"
+#
+sub filter_templates
+{
+  my ($FILE,$errname,$do_expand) = @_;
+  my ($fname,$tempi,$foo,$file,$ti);
+  my (@tempi);
+  my (%f2t,%t2f);
+  my (%tempi, %tempf);
+  my (@retval) = ();
+  my (@gts, @lts);
+
+  # Iterate over file
+  while (<$FILE>)
+  {
+    chomp;
+    
+    # Extract the object file name and the template name.  Do sanity
+    # check on the syntax.  Remove stuff we don't want here.
+    chomp($_);
+    if (/^$/ || / has older revision than expected / || /\.o: more undefined references to \`/)
+    {
+      next;
+    }
+
+    die ("Unknown syntax in $errname; cannot understand:\n \"$_\"\n")
+        unless (/^([^:(]+)(\([^)]+\))?: undefined reference to `([^']*)\'/
+                || /^([^:(]+)(\([^)]+\))?: more undefined references to `([^']*)\'/);
+
+    # Split input into filename and template
+    $fname = $1;
+
+    $tempi = $3;
+
+    # If not a function template, remove the last ::stuff, since we
+    # will instantiate the entire class.  Assume no ::namespace stuff
+    # appears as the righmost >::stuff in a template. 
+    $tempi =~ /[<(]/;
+
+    if ($& eq '<' && ($` !~ /operator[ ]*$/) && $tempi =~ />::[^:]+$/)
+    {
+
+      # It's not as easy as just removing the last ::stuff.  We have
+      # to count ">":s as well, stopping at the first "::" where the
+      # number of "<":s match the number of ">":s
+
+      $tempi = $` . ">"; # Match what was before this pattern
+
+      # Now we have something that contains an unknown number of
+      # "::":s.  We need to split at each, and then join them
+      # again, stopping whenever the "<":s match the ">":s.
+      #  We can assume that the syntax is correct; that the ">";s will
+      # close corresponding "<":s.
+
+      @tempi = split('::',$tempi);
+      $tempi = shift(@tempi);
+
+      @lts = ($tempi =~ m/\</);
+      @gts = ($tempi =~ m/\>/);
+
+      while ($#gts != $#lts && $#tempi != -1)
+      {
+        $tempi .= '::' . shift(@tempi);
+        @lts = ($tempi =~ m/\</);
+        @gts = ($tempi =~ m/\>/);
+      }
+      die ("my_id: Template syntax error: \"$tempi\"\n")
+       unless ($#lts == $#gts);
+
+    }
+    # Sanity check: this must be a complaint about a missing function
+    # template.  Those complaints look exactly like missing global C++
+    # function definitions.
+    #  This means that it never has a "::" (or ":") component (except
+    # between parenthesis), and that it ends in a ')', and that it
+    # does not have angle brackets (at least not both) before the
+    # parenthesis pair (may be inside them, mind you).
+    elsif (($& ne '(' && $tempi !~ /\(/)
+           || ($` =~ /\>/ && $` =~ /\>/)
+           || $tempi !~ /^[^:(]+\(/ || $' !~ /\)$/)
+    {
+      die ("$fname: Undefined stuff `$tempi' at linking (NOT a template, or it's time to update \"fixtemplates\")\n");
+    }
+
+    # Should we expand "Foo< Bar<Baz> >" into "Foo< Bar<Baz> >" and "Bar<Baz>" ?
+    if ($do_expand)
+    {
+      @tempi = expand_template($tempi);
+
+#      print "TI:s from \"$tempi\" in \"$fname\":\n";
+#      foreach $foo (@tempi)
+#      {
+#        print " \'$foo\'\n";
+#      }
+
+    }
+    else  # Leave it as it is.
+    {
+      @tempi = ($tempi);
+    }
+
+    #
+    # Add these templates to what is already in this file
+    #
+    if (!defined($f2t{$fname}))
+    {
+      $f2t{$fname} = {};
+    }
+
+    # Add this file to those we can find these templates in
+    map
+    {
+      if (!defined($t2f{$_}))
+      {
+        $t2f{$_} = {};  # Create an anonymous hash table pointed to by
+                        # the hashvalue of $_ in %t2f
+      }
+      $t2f{$_}->{$fname} = 0;
+
+      # Mark this template-i as _not_ handled.
+      $tempi{$_} = 0;
+    } @tempi;
+
+
+    # Adding them uniquely is done simply by putting a mark in a
+    # hashtable.  (The anonymous hash is created above.)
+    map { $f2t{$fname}->{$_} = 0;} @tempi;
+
+    $tempf{$fname} = 0;
+  }
+
+  # Now choose which files to use.  Let's start with the ones where
+  # there are templates just pointing to that file, and output _all_
+  # templates that one has.  Sort the rest in descending order of
+  # templates, and last on alphabetical sort.
+
+  # First, go through each file and see if there are templates which
+  # has this file as their only user.
+  foreach $file (keys %tempf)
+  {
+  temploop:
+    foreach $ti (keys %{$f2t{$file}})
+    {
+      if (keys %{$t2f{$ti}} == 1)
+      {
+        $tempf{$file}++;
+# Put a comment first on next line to more accurately compute debug
+# statistics 
+        last temploop;
+      }
+    }
+  }
+
+  foreach $file
+      (sort
+       {
+         # First take one (if only one) that has a template with that
+         # file as the only user.
+         ($tempf{$b} != $tempf{$a}) ? $tempf{$b} - $tempf{$a}
+
+         # Next take the one with the most template instantiations
+         : ((keys %{$f2t{$b}}) <=> (keys %{$f2t{$a}}))
+           ? ((keys %{$f2t{$b}}) <=> (keys %{$f2t{$a}}))
+
+         # Or if all equal, in alphabetical order
+         : $a cmp $b;
+
+       } keys %tempf)
+      { 
+#        printf "File $file has %d unique templates, has %d instantiations\n",
+#        $tempf{$file}, (keys %{$f2t{$file}}) - 0;
+
+#        $foo = 0;
+
+        # Sorting makes the output more readable        
+        for $ti (sort(keys %{$f2t{$file}}))
+        {
+          if ($tempi{$ti} < 2)
+          {
+            push @retval, $file . "\n" . $ti;
+#            print " $ti\n";
+            $tempi{$ti} = 2;
+#            $foo++;
+          }
+        }
+#        printf (" %d templates instantiated here\n", $foo);
+      }
+
+#exit 1;
+  return @retval;
+}
+
+############ main() ######################################################
+
+$version = "1.15";
+$my_id = $0 . " version " . $version;
+$call_usage = join(' ',$0,@ARGV);
+$round_argument = 0;
+$temp_inst_file = "";
+$do_parts = 0;
+$parts_prefix = "";
+$real_parts_prefix = "";
+$uniq_file_number = 0;
+#
+# Global variables that are option dependant are listed after the
+# option handling below.
+#
+
+
+#
+# Extract the "round" argument
+while ($ARGV[0] =~ /^-/)
+{
+  $Option = shift(@ARGV);
+  if ($Option eq '-round')
+  {
+    $round_argument = 0+shift(@ARGV);
+  }
+  elsif ($Option eq '-tiname')
+  {
+    $temp_inst_file = shift(@ARGV);
+  }
+  elsif ($Option eq '-parts')
+  {
+    $parts_prefix = shift(@ARGV);
+    $do_parts = 1;
+  }
+  else
+  {
+    warn "$my_id: Warning: Unknown option '$Option'. (Ignored)\n";
+  }
+}
+
+#
+# Check syntax and extract what we want:
+#  * Filepath to the file with linker errors (raw from linker)
+#  * Filepath to the makefile (special syntax as from mgmake assumed)
+#  * Filepath to the file to create or modify
+
+die "Usage: $0 [ -round round ] link-error-file makefile temp-inst-file\n"
+ unless ($#ARGV == 2);
+
+print "*** $my_id\n";
+#printf "*** %s, called as: \"%s\"\n", $my_id, $call_usage;
+
+#
+# Do some setup of global variables.
+#
+$link_error_file = $ARGV[0];
+$makefile = $ARGV[1];
+$real_ti_file = $ARGV[2];
+
+#
+# Different setup if "parts" or not.
+#
+# Parts
+if ($do_parts)
+{
+  #
+  # Regeneration?
+  if ($temp_inst_file ne "")
+  {
+    # Then use same prefix in the ti-makefile as on the real files.
+    $real_parts_prefix = $temp_inst_file;
+  }
+  else
+  {
+    $real_parts_prefix = $parts_prefix;
+  }
+
+  # Comment is # for ti-makefile
+  $c = "#";
+
+  # In either case, the name of the ti-makefile is what has been stated
+  # in non-switch argument.
+  $temp_inst_file = $real_ti_file;
+
+  # Unique number to use when we name macros in the ti-makefile
+  $uniq_file_number = -e $temp_inst_file ? -s $temp_inst_file : 0;
+}
+# Not parts.
+else
+{
+  if ($temp_inst_file eq "")
+  {
+    $temp_inst_file = $real_ti_file;
+  }
+
+  # Comment is // for C++file
+  $c = "//";
+
+  # Get whole name to use as prefix
+  ($parts_prefix) = split (".cc", $temp_inst_file);
+
+  $temp_inst_object_file = $temp_inst_file;
+  $tmp = quotemeta "../obj/";
+
+  # Mangle name so we can find out the temp-inst-file object-name
+  while ($temp_inst_object_file =~ m!^$tmp/[^/]+/[^/]+/!)
+  {
+    $temp_inst_object_file =~ s!($tmp/[^/]+/[^/]+)/!$1\+!;
+  }
+# Slashes mangled, do the .cc => -cc.o
+  $temp_inst_object_file =~ s/\.cc/-cc\.o/;
+
+  # This is what is printed in the dependendencies
+  $parts_src_file = $temp_inst_file;
+  $parts_obj_file = $temp_inst_object_file;
+# print "Object will be: $temp_inst_object_file\n";
+}
+
+# print "Link-err: $link_error_file\n";
+
+#
+# Sanity check:  For an empty link-error-file, there is nothing to do
+#
+exit 0 unless  (-e $link_error_file && -s $link_error_file);
+
+#
+# global variables dependant on options.
+#
+$do_parts_init =
+    "PURGE=cp /dev/null\n\nOBJS=\nSRCS=\nechosrcdeps:\n\t\@echo \$(SRCDEPS)\n\n"
+    . "echosrcs:\n\t\@echo \$(SRCS)\n\n"
+    . "src:\n\t\@\$(MAKE) -f $real_ti_file \"CPPCOMPILE=\$(CPPCOMPILE)\" \"PURGE=\$(PURGE)\" \$(SRCS)"
+    . "\n\nechoobjs:\n\t\@echo \$(OBJS)\n\n"
+    . "objs:\n\t\@\$(MAKE) -f $real_ti_file \"CPPCOMPILE=\$(CPPCOMPILE)\" \"PURGE=\$(PURGE)\" \$(OBJS)"
+    . "\n\nechodeps:\n\t\@cat \$(SRCS) /dev/null | awk  '/Dependencies for /,/END Dependencies for /'"
+    . " | fgrep -v 'Dependencies for' | awk '{ print \$\$2; }' | sort -u | awk '{ printf \"%s \", \$\$1; }'\n";
+
+#
+# Find what templates to instantiate, and files where they are used.
+# (Here is a good place to put the minimal-file-set stuff, with possible
+# read of previous temp-inst-file contents before).
+#
+# First try: let others do the work for us.  Use the same mechanism as
+# in the makefile for getting a unique list of template
+# instantiations.  Last, sort on the object file names.
+#  By sheer coincidence, this sorting order will cause the
+# temp_inst_file to be last in the ordered set, which is exactly what
+# we want (sometimes, or at least once upon a time).
+#
+# Removed:  | sort -t: +1 -2 -u | sort -t: +0 -1 |
+# We now sort the input using "file" (concatenated with) "instantiated template"
+# as the key, and remove duplicates.
+# This way, we end up with input sorted on object file name, with
+# unique instantiations (within the file).
+open (LINKERRORS, "c++filt-cris <$link_error_file | sed -e 's/> virtual />::virtual /;' | sort -t: +0 -3 -u |")
+ || die ("$0: Cannot open input pipe using $link_error_file: $!\n");
+
+@TEMP_INSTS = filter_templates(LINKERRORS, $link_error_file,
+                               $do_parts && (! -e $real_ti_file || -z $real_ti_file));
+
+close(LINKERRORS) || die ("Cannot close pipe from $link_error_file: $!\n");
+
+#
+# If there is no temp_inst_file, then create one with the appropriate
+# header and init text.
+#
+do_header($real_ti_file, $c,
+          ($do_parts ?
+           $do_parts_init : "#define TEMPLATE_INSTANTIATION\n"));
+
+if ($real_ti_file ne $temp_inst_file)
+{
+  do_header($real_ti_file, $c,
+            ($do_parts ? $do_parts_init : "#define TEMPLATE_INSTANTIATION\n"));
+}
+
+$prev_file = "";
+$last_ti_file = "";
+
+if (!$do_parts)
+{
+  $last_ti_file = $real_ti_file;
+  open (TIFILE,">>$last_ti_file")
+      || die ("Cannot append to template instantiation file \"$last_ti_file\": $!\n");
+}
+
+#
+# quoted parts prefix
+$quot_prefix = quotemeta $parts_prefix;
+
+
+# print "Ok, these were your errors:\n";
+while ($#TEMP_INSTS != -1)
+{
+  # I hope it doesnt matter we handle the instantiations in opposite
+  # order of appearance.  It really shouldn't
+
+  ($object_file, $template) = split('\n',pop(@TEMP_INSTS));
+
+  #
+  # There is a syntax error in the g++ demangler, mangler or the type
+  # parser; the demangler may emit '()' (or something else with
+  # parenthesis around) and the parser disagrees on the type. 
+  #  It then seems like the parser gets confused over that syntax.
+  # A workaround is to declare a unique typedef with what is outside the
+  # inner parenthesis, and then declare the type as the typedef with
+  # the inner parenthesis suffixed.  This goes for all parameters
+  #  First, filter out empty parenthesis, but not on "operator()"
+  $template =~ s/operator[ ]*\(\)/operator\#\#/g;
+  $template =~ s/\(\)//g;
+
+  #  If it's a class, and some parameter has parenthesis, or if it's a
+  # function template with more than one pair of parenthesis, then do
+  # stuff. 
+  # 
+  $prefixstuff ="";
+
+  if (($template =~ /\>$/ && $template =~ /\(/)
+      || ($template =~ /\([^(]*\(/))
+  {
+    my($this_template) = $#TEMP_INSTS;
+    my($these_templates) = 0;
+    my(@tmp);
+    my(%typedefs) = ();
+    my ($inside,$before_par,$after_par);
+
+    if ($template =~ />$/)
+    {
+      # Class.  Split at '<>' and commas, and get at it
+      $template =~ /\<(.+)(?=\>$)/;
+      @tmp = split /, /,$1;
+      $pre = "$`\<";
+      $suf = "\>";
+    }
+    else
+    {
+      # Function.  Split at '()' and commas, and get at it.
+      $template =~ /\((.+)(?=\)$)/;
+      @tmp = split /, /,$1;
+      $pre = "$`\(";
+      $suf = "\)";
+    }
+
+    
+    # Note that we may only have one level of parenthesis.
+    # It is left as an exercise to expand the solution to an arbitrary
+    # level of parentheses (remember to expand the deepest levels first).
+    map
+    {
+      if ($_ =~ /\(([^(]+)\)/)
+      {
+        $inside = $1;
+        
+        # Let's assume (for the moment) that everything before the
+        # parenthesis is the type proper, and everything after the
+        # parenthesis is like some kind of array modifier.
+        #  If it turns out this is NOT true, then we will have to weed
+        # out expressions like "[5]" to put as $after_type, and move
+        # other stuff to before the type name.
+        $before_par = $`;
+        $after_par = $';
+        
+        if (!defined($typedefs{$_}))
+        {
+          @{$typedefs{$_}} =
+              ("$before_par ",
+               "__Template_par_type_${round_argument}_${this_template}_$these_templates",
+               "$after_par");
+
+          $these_templates++;
+        }
+        
+        $_ = ${$typedefs{$_}}[1] . " $inside";
+      }
+    } @tmp;
+
+    $template = $pre . join (", ",@tmp) . $suf;
+
+    # Now join all the ($before, $type, $after) triplets of the
+    # typedef:s
+    $prefixstuff = "typedef " .
+        join (";\ntypedef ",
+              # Join the list of _this_ typedef into a string.
+              map { join("",@{$typedefs{$_}}); } keys %typedefs) . ";\n";
+  }
+    
+  # Get back operator(), if any
+  $template =~ s/operator\#\#/operator\(\)/g;
+
+  #
+  # New file?
+  #
+  if ($object_file ne $prev_file)
+  {
+    $source_file = translate_to_source_file($object_file);
+
+    #
+    # Do not get the includes if this is the temp-inst-file (else we
+    # will get the same includes once more...)
+    # Or if it is a "parts"-file
+    #
+    #
+    # If there is no sign of the prefix at a reasonable position
+    # within the file name, then this is from an original source
+    # file (not an "extra" template).
+    #  Assuming we use characters in the prefix that are NOT allowed
+    # in a "normal" source name, we are pretty sure with this check.
+    #
+    if ($source_file !~ m!/$quot_prefix!)
+    {
+      if ($do_parts)
+      {
+        ($parts_src_file) = split("-cc.o", $object_file);
+        $parts_src_file = join("/${parts_prefix}src",split("/src",$parts_src_file));
+        $parts_obj_file = $parts_src_file . "-cc.o";
+        $parts_src_file .= ".cc";
+
+        ($real_parts_src_file) =  split("-cc.o", $object_file);
+        $real_parts_src_file = join("/${real_parts_prefix}src",split("/src",$real_parts_src_file));
+
+        # Not used. $real_parts_obj_file = $real_parts_src_file . "-cc.o";
+        $real_parts_src_file .= ".cc";
+
+        # Anyway, we have to close the current file (if one) we're
+        # writing to. 
+        if ($prev_file ne "")
+        {
+          # Close the previous parts-file.
+          close (TIFILE)
+              || die ("Cannot close template instantiation file \"$last_ti_file\": $!\n");
+        }
+
+        #
+        # Check the previous ti-makefile if there was a line for the
+        # ti-part of this file.
+        # If there was not, then add it, and add this part-object file
+        # to object files to be included in the library.
+
+#         print "Made it here\n";
+
+        # Grep the makefile to see if the sourcefile is there already.
+        if (system(sprintf("egrep -s '^%s:' $real_ti_file", quotemeta $parts_src_file)) != 0)
+        {
+          # No sign of the source-file, add it to the makefile
+          $last_ti_file = $real_ti_file;
+          open (TIFILE,">>$last_ti_file")
+              || die ("Cannot append to template instantiation makefile \"$last_ti_file\": $!\n");
+
+
+          #
+          # Print dependencies for the parts_src_file to the original
+          # file, and add it to what files we need to check and how to
+          # update parts_src_file before compiling the parts_src_file.
+          #  It is assumed that fixtemplates is called again to update the
+          # parts_src_file(s) if any has been updated through this rule
+          # (i.e. emptied).
+
+          # Add this to the set of source files to check on
+          print TIFILE "SRCS += $parts_src_file\n";
+          print TIFILE "SRCDEPS += $source_file\n";
+
+          # How to update it when the original file changes (just
+          # empty it)
+          print TIFILE "$parts_src_file: $source_file\n";
+          print TIFILE "\t\@\$(PURGE) $parts_src_file\n\n";
+
+          # Add this object file to what we include in the library.
+          print TIFILE "OBJS += $parts_obj_file\n";
+
+          # Add a dynamic dependency for how to find out why to
+          # recompile this file.
+          print TIFILE "DEP_${uniq_file_number} = ";
+          printf TIFILE ("awk <%s '/Dependencies for %s/, /END Dependencies for %s/'",
+                        $parts_src_file, quotemeta $parts_obj_file, quotemeta $parts_obj_file);
+          print TIFILE " | fgrep -v 'Dependencies for' | awk '{ print \$\$2; }' | sort -u\n";
+
+          # Another dynamic macro to find out which include files
+          # there are.
+          print TIFILE "INC_${uniq_file_number} = ";
+          printf TIFILE ("awk <%s '/Include paths for %s/,/END Include paths for %s/'",
+                        $parts_src_file, quotemeta $parts_src_file, quotemeta $parts_src_file);
+          print TIFILE " | fgrep -v 'Include paths for' | awk '{ print \$\$2; }'\n";
+
+          print TIFILE "$parts_obj_file: $parts_src_file \$(shell \$(DEP_${uniq_file_number}))\n";
+          print TIFILE "\t\@echo \"###\" Template instantiations for $source_file \"###\"\n";
+          print TIFILE "\t\@\$(CPPCOMPILE) `\$(INC_${uniq_file_number})` -c $parts_src_file -o $parts_obj_file\n\n";
+
+          #
+          # Get a new unique file number.  If we just add 1 we are
+          # sure to get a new unique number which will not be the same
+          # at later fixtemplates rounds, since we are sure that the
+          # next initial value (-s; the size of the ti-file) will not
+          # hit any of the values we present.
+          #
+          $uniq_file_number++;
+
+          close (TIFILE)
+              || die ("Cannot close template instantiation makefile \"$last_ti_file\": $!\n");
+        }
+
+        #
+        # Check if the sourcefile exists and is not empty, if it does
+        # not/is empty, create a new header.
+        #
+        if (-z $real_parts_src_file || ! -e $real_parts_src_file)
+        {
+          do_header($real_parts_src_file,"//","#define TEMPLATE_INSTANTIATION\n");
+        }
+
+        $last_ti_file = $real_parts_src_file;
+        open (TIFILE,">>$last_ti_file")
+            || die ("Cannot append to template instantiation file \"$last_ti_file\": $!\n");
+      }
+      else # _Not_ parts
+      {
+        print TIFILE "\n// From $source_file:\n";
+      }
+
+      #
+      # Common part to parts/one-file.  Write dependencies to the
+      # current file.
+
+      #
+      # Get the dependencies of this objectfile.
+      #
+      @dependencies
+          = get_dependencies_and_includepaths($object_file,$makefile);
+        
+      # Must be one include-path and one dependency-file at least...
+      # -1 + 2 == 1
+      die ("$my_id: What? no dependencies or includepaths for \"$object_file\" or \"$source_file\" in \"$makefile\"?\n")
+            unless $#dependencies > 1;
+        
+      @includepaths = (split (' ',pop(@dependencies)));
+        
+      if (!$do_parts)
+      {
+        print TIFILE "// Dependencies for $parts_src_file\n";
+        print TIFILE "// $source_file";
+        print TIFILE "\n// END Dependencies for $parts_src_file\n\n";
+      }
+        
+      print TIFILE "// Dependencies for $parts_obj_file\n";
+      print TIFILE "// ";
+      print TIFILE (join("\n// ",@dependencies));
+      print TIFILE "\n// END Dependencies for $parts_obj_file\n\n";
+
+      print TIFILE "// Include paths for $parts_src_file\n";
+      print TIFILE "// ";
+      print TIFILE (join("\n// ",@includepaths));
+      print TIFILE "\n// END Include paths for $parts_src_file\n\n";
+        
+      print TIFILE "// Include stuff, with suitable undef:s added\n";
+      print TIFILE get_includes($source_file);
+    }
+    else  # It _is_ a derived file (ti-part-file or ti global file)
+    {
+      if ($do_parts)
+      {
+        $parts_src_file = $source_file;
+        $parts_obj_file = $object_file;
+        $temp_inst_object_file = $parts_obj_file;
+
+        $real_parts_src_file = $parts_src_file;
+        $real_parts_src_file =~ s/$parts_prefix/$real_parts_prefix/;
+
+        $last_ti_file = $real_parts_src_file;
+        open (TIFILE,">>$last_ti_file")
+            || die ("Cannot append to template instantiation file \"$last_ti_file\": $!\n");
+      }
+      else  # Not do_parts
+      {
+        die ("Failed to mangle object name from $temp_inst_file: $object_file != $temp_inst_object_file\n")
+            unless $object_file eq $temp_inst_object_file;
+      }
+      print TIFILE "// REMARK: Extra template needed from $temp_inst_object_file\n";
+    }
+
+    # Mark that there is a new file
+    $prev_file = $object_file;
+
+  } # End new-file check
+
+  printf TIFILE "$prefixstuff template %s$template;\n",
+    ($template =~ /\)$/) ? "" : "class ";
+}
+
+close (TIFILE)
+   || die ("Cannot close template instantiation file \"$last_ti_file\": $!\n");
+
+# print "Bye bye\n";
