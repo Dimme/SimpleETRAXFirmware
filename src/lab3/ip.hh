@@ -32,17 +32,17 @@
 *%***************************************************************************/
 class IP
 {
- public:
-  static IP& instance();
-  const IPAddress& myAddress();
-  // return the IP address of this server
+public:
+	static IP& instance();
+	const IPAddress& myAddress();
+	// return the IP address of this server
 
-  enum { ipHeaderLength = 20 };
+	enum { ipHeaderLength = 20 };
 
- private:
-  IP();
-  IPAddress* myIPAddress;
-  // Holds the IP address of this server
+private:
+	IP();
+	IPAddress* myIPAddress;
+	// Holds the IP address of this server
 };
 
 /*****************************************************************************
@@ -62,18 +62,18 @@ class IP
 *%***************************************************************************/
 class IPInPacket : public InPacket
 {
- public:
-  IPInPacket(byte*           theData,
-             udword          theLength,
-             InPacket*       theFrame);
-  void decode();
-  void answer(byte* theData, udword theLength);
-  uword headerOffset();
+public:
+	IPInPacket(byte*           theData,
+		udword          theLength,
+		InPacket*       theFrame);
+	void decode();
+	void answer(byte* theData, udword theLength);
+	uword headerOffset();
 
- private:
-  // Things extracted from the packet used in answer:
-  byte      myProtocol;
-  IPAddress mySourceIPAddress;
+private:
+	// Things extracted from the packet used in answer:
+	byte      myProtocol;
+	IPAddress mySourceIPAddress;
 };
 
 /*****************************************************************************
@@ -91,19 +91,19 @@ class IPInPacket : public InPacket
 *%***************************************************************************/
 class IPHeader
 {
- public:
-  IPHeader() {}
+public:
+	IPHeader() {}
 
-  byte  versionNHeaderLength;
-  byte  TypeOfService;
-  uword totalLength;
-  uword identification;
-  uword fragmentFlagsNOffset;
-  byte  timeToLive;
-  byte  protocol;
-  uword headerChecksum;
-  IPAddress sourceIPAddress;
-  IPAddress destinationIPAddress;
+	byte  versionNHeaderLength;
+	byte  TypeOfService;
+	uword totalLength;
+	uword identification;
+	uword fragmentFlagsNOffset;
+	byte  timeToLive;
+	byte  protocol;
+	uword headerChecksum;
+	IPAddress sourceIPAddress;
+	IPAddress destinationIPAddress;
 };
 
 #endif

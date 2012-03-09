@@ -20,7 +20,7 @@ extern "C"
 
 #include "fs.hh"
 
-#define D_fs
+//#define D_fs
 #ifdef D_fs
 #define trace cout
 #else
@@ -33,35 +33,45 @@ extern "C"
 
 FileSystem::FileSystem()
 {
-  int slask;
-  cout << "FileSystem created." << endl;
-
+	//int slask;
+	dynamicPage = 0;
+	dynamicPageLength = 0;
+	cout << "FileSystem created." << endl;
 }
 
 //----------------------------------------------------------------------------
 //
-FileSystem&
-FileSystem::instance()
+FileSystem& FileSystem::instance()
 {
-  static FileSystem myInstance;
-  return myInstance;
+	static FileSystem myInstance;
+	return myInstance;
 }
 
-bool FileSystem::writeFile(char *path,char *name,
-			   byte *theData,udword theLength)
+bool FileSystem::writeFile(byte *theData, udword theLength)
 {
-  return false;
+	// Delete any old instances
+	if (dynamicPage)
+		delete [] dynamicPage;
+		
+	// Create new instance with the right size
+	dynamicPage = new byte[theLength];
+	dynamicPageLength = theLength;
+
+	// Copy the page to the memory
+	memcpy(dynamicPage, theData, theLength);
+	
+	return true;
 }
 
 typedef struct lzhead
 {
-        unsigned char           HeadSiz,HeadChk,HeadID[5]; // 0 1 2
-        unsigned char           PacSiz[4];                 // 7 
-        unsigned char           OrgSiz[4];                 // 11
-        unsigned char           Ftime[4];                  // 15
-        unsigned char           Attr,Level;                // 17
-        unsigned char           name_length;               // 18
-        unsigned char           Fname[1];                  // 19
+	unsigned char           HeadSiz,HeadChk,HeadID[5]; // 0 1 2
+	unsigned char           PacSiz[4];                 // 7 
+	unsigned char           OrgSiz[4];                 // 11
+	unsigned char           Ftime[4];                  // 15
+	unsigned char           Attr,Level;                // 17
+	unsigned char           name_length;               // 18
+	unsigned char           Fname[1];                  // 19
 } LzHead;
 
 const byte FileSystem::myFileSystem[]=
@@ -69,113 +79,95 @@ const byte FileSystem::myFileSystem[]=
 #include "lhafile.bin"
 };
 
-byte *FileSystem::readFile(char *path,char *name,udword& theLength)
+byte* FileSystem::readFile(char *path,char *name,udword& theLength)
 {
-  int file_size=sizeof(FileSystem::myFileSystem);
-  int curr_size=0;
-  int curr_file_size=0;
+	// Return the dynamic page if it is required and it exists
+	if (!strcmp(name, "dynamic.htm") && dynamicPage) {
+		//cout << "Will return: " << dynamicPage << endl;
+		theLength = dynamicPageLength;
+		return dynamicPage;
+	}
 
-  while((curr_size<(file_size-16))&&(curr_size>=0))
-  {
-    LzHead *header=(LzHead *)&FileSystem::myFileSystem[curr_size];
-    char *file_path;
-    udword the_file_size;
-   
-    curr_size+=header->HeadSiz+2;
+	int file_size=sizeof(FileSystem::myFileSystem);
+	int curr_size=0;
+	int curr_file_size=0;
 
-    curr_file_size=header->PacSiz[0];
-    curr_file_size+=header->PacSiz[1]<<8;
-    curr_file_size+=header->PacSiz[2]<<16;
-    curr_file_size+=header->PacSiz[3]<<24;
+	while((curr_size<(file_size-16))&&(curr_size>=0))
+	{
+		LzHead *header=(LzHead *)&FileSystem::myFileSystem[curr_size];
+		//char *file_path;
+		udword the_file_size;
 
-    the_file_size=curr_file_size;
+		curr_size+=header->HeadSiz+2;
 
-    // check if it is the correct file.
-    if ((!strncmp(name,header->Fname,header->name_length))&&
-	(header->name_length))
-      {
-	bool endCheck=false;
+		curr_file_size=header->PacSiz[0];
+		curr_file_size+=header->PacSiz[1]<<8;
+		curr_file_size+=header->PacSiz[2]<<16;
+		curr_file_size+=header->PacSiz[3]<<24;
 
-        byte *file_ptr=&FileSystem::myFileSystem[curr_size];
+		the_file_size=curr_file_size;
+
+		// check if it is the correct file.
+		if ((!strncmp(name,(const char*)header->Fname,header->name_length)) && (header->name_length)) 
+		{
+			bool endCheck = false;
+
+			byte *file_ptr = (byte*) &FileSystem::myFileSystem[curr_size];
 
 
-	//may have found it check path
-	
-	if ((header->HeadSiz>27)&&(header->Level==1)&&
-	    (header->Fname[header->name_length+17]==2))
-	  {
-	    byte *file_path=&header->Fname[header->name_length+18];
-	    byte *file_path2=file_path;
-	    udword path_len;
-		
-	    endCheck=true;
+			//may have found it check path
 
-	    //hitta slut
-	    do
-	      while(*(file_path2++)!=0xff);
-	    while (*file_path2!=7);
+			if ((header->HeadSiz>27)&&(header->Level==1)&&
+				(header->Fname[header->name_length+17]==2))
+			{
+				byte *file_path=&header->Fname[header->name_length+18];
+				byte *file_path2=file_path;
+				udword path_len;
 
-	    the_file_size-=((int)(file_path2-file_ptr))+9;
-	    file_ptr=file_path2+9;
+				endCheck=true;
 
-	    printf("%p\n",file_ptr);
+				//hitta slut
+				do
+				while(*(file_path2++)!=0xff);
+				while (*file_path2!=7);
 
-	    path_len=file_path2-file_path;
-	    if (!strncmp(path,file_path,path_len))
-	      {
-		if (strlen(path)==path_len)
-		  {
-		    endCheck=false;
-		  }
-	      }
-	  }
-	else
-	  {
-	    file_ptr += 19;
-            the_file_size -= 19;
-	    if (*path)
-	      {
-		endCheck=true;
-	      }
-	  }
+				the_file_size-=((int)(file_path2-file_ptr))+9;
+				file_ptr=file_path2+9;
 
-	if (!endCheck)
-	  {
-	    //found it!
+				//printf("%p\n",file_ptr);
 
-	    // calc size and ptr 
-	    theLength=the_file_size;
-	    return file_ptr;
-	  }
-      }
-    curr_size+=curr_file_size;
-  }
-  return 0;
+				path_len=file_path2-file_path;
+				if (!strncmp(path,(const char *)file_path,path_len))
+				{
+					if (strlen(path)==path_len)
+					{
+						endCheck=false;
+					}
+				}
+			}
+			else
+			{
+				file_ptr += 19;
+				the_file_size -= 19;
+				if (*path)
+				{
+					endCheck=true;
+				}
+			}
+
+			if (!endCheck)
+			{
+				//found it!
+
+				// calc size and ptr 
+				theLength=the_file_size;
+				return file_ptr;
+			}
+		}
+		curr_size+=curr_file_size;
+	}
+	return 0;
 }
 
 
 /****************** END OF FILE fs.cc *************************************/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

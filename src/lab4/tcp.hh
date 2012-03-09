@@ -33,28 +33,28 @@
 class TCPConnection;
 class TCP
 {
- public:
-  static TCP& instance();
-  TCPConnection* getConnection(IPAddress& theSourceAddress,
-                               uword      theSourcePort,
-                               uword      theDestinationPort);
-  // Find a connection in the connection list
-  
-  TCPConnection* createConnection(IPAddress& theSourceAddress,
-                                  uword      theSourcePort,
-                                  uword      theDestinationPort,
-                                  InPacket*  theCreator);
-  // Create a new connection and insert it in the connection list
+public:
+	static TCP& instance();
+	TCPConnection* getConnection(IPAddress& theSourceAddress,
+		uword      theSourcePort,
+		uword      theDestinationPort);
+	// Find a connection in the connection list
 
-  void deleteConnection(TCPConnection*);
-  // Removes a connection from the list and deletes it
-  
-  enum { tcpHeaderLength = 20 };
+	TCPConnection* createConnection(IPAddress& theSourceAddress,
+		uword      theSourcePort,
+		uword      theDestinationPort,
+		InPacket*  theCreator);
+	// Create a new connection and insert it in the connection list
 
- private:
-  TCP();
-  PQueue<TCPConnection*> myConnectionList;
-  // All the TCP connections
+	void deleteConnection(TCPConnection*);
+	// Removes a connection from the list and deletes it
+
+	enum { tcpHeaderLength = 20 };
+
+private:
+	TCP();
+	PQueue<TCPConnection*> myConnectionList;
+	// All the TCP connections
 };
 
 /*****************************************************************************
@@ -74,61 +74,61 @@ class TCPState;
 class TCPSender;
 class TCPConnection
 {
- public:
-  TCPConnection(IPAddress& theSourceAddress,
-                uword      theSourcePort,
-                uword      theDestinationPort,
-                InPacket*  theCreator);
-  ~TCPConnection();
-  
-  bool tryConnection(IPAddress& theSourceAddress,
-                     uword      theSourcePort,
-                     uword      theDestinationPort);
-  // Returns true if this connection matches the arguments
-  
-  void Synchronize(udword theSynchronizationNumber);
-  // Handle an incoming SYN segment
-  void NetClose();
-  // Handle an incoming FIN segment
-  void AppClose();
-  // Handle close from application
-  void Kill();
-  // Handle an incoming RST segment, can also called in other error conditions
-  void Receive(udword theSynchronizationNumber,
-               byte*  theData,
-               udword theLength);
-  // Handle incoming data
-  void Acknowledge(udword theAcknowledgementNumber);
-  // Handle incoming Acknowledgement
-  void Send(byte*  theData,
-            udword theLength);
-  // Send outgoing data
+public:
+	TCPConnection(IPAddress& theSourceAddress,
+		uword      theSourcePort,
+		uword      theDestinationPort,
+		InPacket*  theCreator);
+	~TCPConnection();
 
-  //-------------------------------------------------------------------------
-  //
-  // Interface to TCPState
-  //
+	bool tryConnection(IPAddress& theSourceAddress,
+		uword      theSourcePort,
+		uword      theDestinationPort);
+	// Returns true if this connection matches the arguments
 
-  IPAddress  hisAddress;
-  // Other hosts IP address
-  uword      hisPort;
-  // Other hosts port
-  uword      myPort;
-  // My port
+	void Synchronize(udword theSynchronizationNumber);
+	// Handle an incoming SYN segment
+	void NetClose();
+	// Handle an incoming FIN segment
+	void AppClose();
+	// Handle close from application
+	void Kill();
+	// Handle an incoming RST segment, can also called in other error conditions
+	void Receive(udword theSynchronizationNumber,
+		byte*  theData,
+		udword theLength);
+	// Handle incoming data
+	void Acknowledge(udword theAcknowledgementNumber);
+	// Handle incoming Acknowledgement
+	void Send(byte*  theData,
+		udword theLength);
+	// Send outgoing data
 
-  udword     receiveNext; 
-  // next expected sequence number from other host
-  uword      receiveWindow;
-  // Number of bytes it is posible to send without getting an ACK
+	//-------------------------------------------------------------------------
+	//
+	// Interface to TCPState
+	//
 
-  udword     sendNext;    
-  // next sequence number to send
-  udword     sentUnAcked;
-  // Data has been acknowledged up to this sequence number. What remains up to 
-  // sendNext is sent but not yet acked by the other host.
+	IPAddress  hisAddress;
+	// Other hosts IP address
+	uword      hisPort;
+	// Other hosts port
+	uword      myPort;
+	// My port
 
-  TCPSender* myTCPSender;
-  TCPState*  myState;
+	udword     receiveNext; 
+	// next expected sequence number from other host
+	uword      receiveWindow;
+	// Number of bytes it is posible to send without getting an ACK
+
+	udword     sendNext;
+	// next sequence number to send
+	udword     sentUnAcked;
+	// Data has been acknowledged up to this sequence number. What remains up to 
+	// sendNext is sent but not yet acked by the other host.
+
+	TCPSender* myTCPSender;
+	TCPState*  myState;
 };
 
 /*****************************************************************************
@@ -146,28 +146,28 @@ class TCPConnection
 *%***************************************************************************/
 class TCPState
 {
- public:
-  virtual void Synchronize(TCPConnection* theConnection,
-                           udword theSynchronizationNumber);
-  // Handle an incoming SYN segment
-  virtual void NetClose(TCPConnection* theConnection);
-  // Handle an incoming FIN segment
-  virtual void AppClose(TCPConnection* theConnection);
-  // Handle close from application
-  virtual void Kill(TCPConnection* theConnection);
-  // Handle an incoming RST segment, can also called in other error conditions
-  virtual void Receive(TCPConnection* theConnection,
-                       udword theSynchronizationNumber,
-                       byte*  theData,
-                       udword theLength);
-  // Handle incoming data
-  virtual void Acknowledge(TCPConnection* theConnection,
-                           udword theAcknowledgementNumber);
-  // Handle incoming Acknowledgement
-  virtual void Send(TCPConnection* theConnection,
-                    byte*  theData,
-                    udword theLength);
-  // Send outgoing data
+public:
+	virtual void Synchronize(TCPConnection* theConnection,
+		udword theSynchronizationNumber);
+	// Handle an incoming SYN segment
+	virtual void NetClose(TCPConnection* theConnection);
+	// Handle an incoming FIN segment
+	virtual void AppClose(TCPConnection* theConnection);
+	// Handle close from application
+	virtual void Kill(TCPConnection* theConnection);
+	// Handle an incoming RST segment, can also called in other error conditions
+	virtual void Receive(TCPConnection* theConnection,
+		udword theSynchronizationNumber,
+		byte*  theData,
+		udword theLength);
+	// Handle incoming data
+	virtual void Acknowledge(TCPConnection* theConnection,
+		udword theAcknowledgementNumber);
+	// Handle incoming Acknowledgement
+	virtual void Send(TCPConnection* theConnection,
+		byte*  theData,
+		udword theLength);
+	// Send outgoing data
 };
 
 /*****************************************************************************
@@ -185,15 +185,15 @@ class TCPState
 *%***************************************************************************/
 class ListenState : public TCPState
 {
- public:
-  static ListenState* instance();
-  
-  void Synchronize(TCPConnection* theConnection,
-                   udword theSynchronizationNumber);
-  // Handle an incoming SYN segment
-  
- protected:
-  ListenState() {}
+public:
+	static ListenState* instance();
+
+	void Synchronize(TCPConnection* theConnection,
+		udword theSynchronizationNumber);
+	// Handle an incoming SYN segment
+
+protected:
+	ListenState() {}
 };
 
 /*****************************************************************************
@@ -211,15 +211,15 @@ class ListenState : public TCPState
 *%***************************************************************************/
 class SynRecvdState : public TCPState
 {
- public:
-  static SynRecvdState* instance();
+public:
+	static SynRecvdState* instance();
 
-  void Acknowledge(TCPConnection* theConnection,
-                   udword theAcknowledgementNumber);
-  // Handle incoming Acknowledgement
-  
- protected:
-  SynRecvdState() {}
+	void Acknowledge(TCPConnection* theConnection,
+		udword theAcknowledgementNumber);
+	// Handle incoming Acknowledgement
+
+protected:
+	SynRecvdState() {}
 };
 
 /*****************************************************************************
@@ -237,26 +237,26 @@ class SynRecvdState : public TCPState
 *%***************************************************************************/
 class EstablishedState : public TCPState
 {
- public:
-  static EstablishedState* instance();
-  
-  void NetClose(TCPConnection* theConnection);
-  // Handle an incoming FIN segment
-  void Receive(TCPConnection* theConnection,
-               udword theSynchronizationNumber,
-               byte*  theData,
-               udword theLength);
-  // Handle incoming data
-  void Acknowledge(TCPConnection* theConnection,
-                   udword theAcknowledgementNumber);
-  // Handle incoming Acknowledgement
-  void Send(TCPConnection* theConnection,
-            byte*  theData,
-            udword theLength);
-  // Send outgoing data
+public:
+	static EstablishedState* instance();
 
- protected:
-  EstablishedState() {}
+	void NetClose(TCPConnection* theConnection);
+	// Handle an incoming FIN segment
+	void Receive(TCPConnection* theConnection,
+		udword theSynchronizationNumber,
+		byte*  theData,
+		udword theLength);
+	// Handle incoming data
+	void Acknowledge(TCPConnection* theConnection,
+		udword theAcknowledgementNumber);
+	// Handle incoming Acknowledgement
+	void Send(TCPConnection* theConnection,
+		byte*  theData,
+		udword theLength);
+	// Send outgoing data
+
+protected:
+	EstablishedState() {}
 };
 
 /*****************************************************************************
@@ -274,14 +274,14 @@ class EstablishedState : public TCPState
 *%***************************************************************************/
 class CloseWaitState : public TCPState
 {
- public:
-  static CloseWaitState* instance();
+public:
+	static CloseWaitState* instance();
 
-  void AppClose(TCPConnection* theConnection);
-  // Handle close from application
+	void AppClose(TCPConnection* theConnection);
+	// Handle close from application
 
- protected:
-  CloseWaitState() {}
+protected:
+	CloseWaitState() {}
 };
 
 /*****************************************************************************
@@ -299,15 +299,15 @@ class CloseWaitState : public TCPState
 *%***************************************************************************/
 class LastAckState : public TCPState
 {
- public:
-  static LastAckState* instance();
-  
-  void Acknowledge(TCPConnection* theConnection,
-                   udword theAcknowledgementNumber);
-  // Handle incoming Acknowledgement
+public:
+	static LastAckState* instance();
 
- protected:
-  LastAckState() {}
+	void Acknowledge(TCPConnection* theConnection,
+		udword theAcknowledgementNumber);
+	// Handle incoming Acknowledgement
+
+protected:
+	LastAckState() {}
 };
 
 /*****************************************************************************
@@ -325,20 +325,20 @@ class LastAckState : public TCPState
 *%***************************************************************************/
 class TCPSender
 {
- public:
-  TCPSender(TCPConnection* theConnection,
-	        InPacket*      theCreator);
-  ~TCPSender();
+public:
+	TCPSender(TCPConnection* theConnection,
+		InPacket*      theCreator);
+	~TCPSender();
 
-  void sendFlags(byte theFlags);
-  // Send a flag segment without data.
-  void sendData(byte*  theData,
-                udword theLength);
-  // Send a data segment. PSH and ACK flags are set.
+	void sendFlags(byte theFlags);
+	// Send a flag segment without data.
+	void sendData(byte*  theData,
+		udword theLength);
+	// Send a data segment. PSH and ACK flags are set.
 
- private:
-  TCPConnection* myConnection;
-  InPacket*      myAnswerChain;
+private:
+	TCPConnection* myConnection;
+	InPacket*      myAnswerChain;
 };
 
 /*****************************************************************************
@@ -356,23 +356,23 @@ class TCPSender
 *%***************************************************************************/
 class TCPInPacket : public InPacket
 {
- public:
-  TCPInPacket(byte*           theData,
-              udword          theLength,
-              InPacket*       theFrame,
-              IPAddress&      theSourceAddress);
-  void decode();
-  void answer(byte* theData, udword theLength);
-  uword headerOffset();
+public:
+	TCPInPacket(byte*           theData,
+		udword          theLength,
+		InPacket*       theFrame,
+		IPAddress&      theSourceAddress);
+	void decode();
+	void answer(byte* theData, udword theLength);
+	uword headerOffset();
 
-  InPacket* copyAnswerChain();
+	InPacket* copyAnswerChain();
 
- private:
-  IPAddress mySourceAddress;
-  uword     mySourcePort;
-  uword     myDestinationPort;
-  udword    mySequenceNumber;
-  udword    myAcknowledgementNumber;
+private:
+	IPAddress mySourceAddress;
+	uword     mySourcePort;
+	uword     myDestinationPort;
+	udword    mySequenceNumber;
+	udword    myAcknowledgementNumber;
 };
 
 /*****************************************************************************
@@ -390,19 +390,19 @@ class TCPInPacket : public InPacket
 *%***************************************************************************/
 class TCPHeader
 {
-  public:
-  TCPHeader() {}
+public:
+	TCPHeader() {}
 
-  uword  sourcePort;
-  uword  destinationPort;
-  udword sequenceNumber;
-  udword acknowledgementNumber;
-  byte   headerLength;
-  // 6 reserved bits omitted.
-  byte   flags;
-  uword  windowSize;
-  uword  checksum;
-  uword  urgentPointer;
+	uword  sourcePort;
+	uword  destinationPort;
+	udword sequenceNumber;
+	udword acknowledgementNumber;
+	byte   headerLength;
+	// 6 reserved bits omitted.
+	byte   flags;
+	uword  windowSize;
+	uword  checksum;
+	uword  urgentPointer;
 };
 
 /*****************************************************************************
@@ -420,16 +420,16 @@ class TCPHeader
 *%***************************************************************************/
 class TCPPseudoHeader
 {
- public:
-  TCPPseudoHeader(IPAddress& theDestination, uword theLength);
-  uword checksum();
-  
- protected:
-  IPAddress sourceIPAddress;
-  IPAddress destinationIPAddress;
-  byte      zero;
-  byte      protocol;
-  uword     tcpLength;
+public:
+	TCPPseudoHeader(IPAddress& theDestination, uword theLength);
+	uword checksum();
+
+protected:
+	IPAddress sourceIPAddress;
+	IPAddress destinationIPAddress;
+	byte      zero;
+	byte      protocol;
+	uword     tcpLength;
 };
 
 #endif

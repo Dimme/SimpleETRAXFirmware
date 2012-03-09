@@ -1,0 +1,4 @@
+genmake -no-lint-files $1
+axmake -clean $1
+axmake $1
+

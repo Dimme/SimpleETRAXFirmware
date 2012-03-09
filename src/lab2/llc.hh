@@ -31,23 +31,23 @@
 *%***************************************************************************/
 class LLCInPacket : public InPacket
 {
- public:
-  LLCInPacket(byte*           theData,
-              udword          theLength,
-              InPacket*       theFrame,
-              EthernetAddress theDestinationAddress,
-              EthernetAddress theSourceAddress,
-              uword           theTypeLen);
-  // Ethernet must provide the ethernet information
-  void decode();
-  // Will identify and answer to ICMP ECHO (ping) packets to this server
-  void answer(byte* theData, udword theLength);
-  uword headerOffset();
-  
- private:
-  EthernetAddress myDestinationAddress;
-  EthernetAddress mySourceAddress;
-  uword           myTypeLen;
+public:
+	LLCInPacket(byte*           theData,
+		udword          theLength,
+		InPacket*       theFrame,
+		EthernetAddress theDestinationAddress,
+		EthernetAddress theSourceAddress,
+		uword           theTypeLen);
+	// Ethernet must provide the ethernet information
+	void decode();
+	// Will identify and answer to ICMP ECHO (ping) packets to this server
+	void answer(byte* theData, udword theLength);
+	uword headerOffset();
+
+private:
+	EthernetAddress myDestinationAddress;
+	EthernetAddress mySourceAddress;
+	uword           myTypeLen;
 };
 
 #endif

@@ -31,24 +31,24 @@
 *%***************************************************************************/
 class LLCInPacket : public InPacket
 {
- public:
-  LLCInPacket(byte*           theData,
-              udword          theLength,
-              InPacket*       theFrame,
-              EthernetAddress theDestinationAddress,
-              EthernetAddress theSourceAddress,
-              uword           theTypeLen);
-  void decode();
-  void answer(byte* theData, udword theLength);
-  uword headerOffset();
+public:
+	LLCInPacket(byte*           theData,
+		udword          theLength,
+		InPacket*       theFrame,
+		EthernetAddress theDestinationAddress,
+		EthernetAddress theSourceAddress,
+		uword           theTypeLen);
+	void decode();
+	void answer(byte* theData, udword theLength);
+	uword headerOffset();
 
- private:
-  EthernetAddress myDestinationAddress;
-  // Destination address extracted from the packet
-  EthernetAddress mySourceAddress;
-  // Source address extracted from the packet
-  uword           myTypeLen;
-  // Type/Length extracted from the packet and byte reordered
+private:
+	EthernetAddress myDestinationAddress;
+	// Destination address extracted from the packet
+	EthernetAddress mySourceAddress;
+	// Source address extracted from the packet
+	uword           myTypeLen;
+	// Type/Length extracted from the packet and byte reordered
 };
 
 #endif

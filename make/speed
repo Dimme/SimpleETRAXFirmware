@@ -1,0 +1,3 @@
+#!/bin/sh
+
+echo -e "f" | nc i2grp01 7 | dd of=/dev/null

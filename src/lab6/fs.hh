@@ -29,32 +29,23 @@
 *%***************************************************************************/
 class FileSystem
 {
- public:
-  static FileSystem& instance();
+public:
+	FileSystem();
 
-  bool writeFile(char *path,char *name,byte *theData,udword theLength);
-  // true if the write was done ie if enough memory is present
+	static FileSystem& instance();
 
-  byte *readFile(char *path,char *name,udword& theLength);
-  // returns the ptr to and the length of a file..
+	bool writeFile(byte *theData, udword theLength);
+	// true if the write was done ie if enough memory is present
 
- private:
- static const byte myFileSystem[];
+	byte *readFile(char *path,char *name,udword& theLength);
+	// returns the ptr to and the length of a file..
+
+private:
+	static const byte myFileSystem[];
+	byte * dynamicPage;
+	udword dynamicPageLength;
 };
 
 #endif
 
 /****************** END OF FILE fs.hh *************************************/
-
-
-
-
-
-
-
-
-
-
-
-
-

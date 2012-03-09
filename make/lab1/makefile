@@ -1,6 +1,6 @@
 #!
 #! genmake version 1.16 12/12/96
-#! lab1/makefile created Wed Jan 18 16:46:09 CET 2012
+#! lab1/makefile created Wed Feb  1 13:50:38 CET 2012
 #!
 #
 #

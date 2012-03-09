@@ -153,7 +153,7 @@ FrontPanel::FrontPanel() : mySemaphore(Semaphore::createQueueSemaphore("led",0))
 	myCDLEDTimer = new CDLEDTimer(Clock::tics*60);
 	
 	// Illuminate the blinking Status LED
-	myStatusLEDTimer = new StatusLEDTimer(Clock::tics*20);
+	myStatusLEDTimer = new StatusLEDTimer(Clock::tics*4);
 }
 
 void FrontPanel::doit()
